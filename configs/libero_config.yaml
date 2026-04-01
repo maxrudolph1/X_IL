@@ -7,8 +7,8 @@ log_dir: logs/${task_suite}/
 
 # insert wandb here
 wandb:
-  entity: tiger_or_cat
-  project: fast_mail
+  entity: jiahuikchen 
+  project: xil_vla
 
 group: bc_${task_suite}
 
@@ -29,7 +29,8 @@ task_suite: libero_object
 traj_per_task: 10
 
 ## change the path of dataset
-dataset_path: /home/david/2024/datasets/${task_suite}
+libero_data_root: ${oc.env:LIBERO_DATA_ROOT,/datastor1/droid/.libero/datasets}
+dataset_path: ${libero_data_root}/${task_suite}
 
 # Model Setting
 window_size: 10
@@ -82,16 +83,16 @@ shape_meta:
 ##########################################################################################
 # Common Parameters
 ##########################################################################################
-n_embd: 256
+n_embd: 512
 goal_dim: 512
-latent_dim: 256
+latent_dim: 512
 
 ##########################################################################################
 # Transformer Parameters (encoder-decoder)
 ##########################################################################################
-encoder_n_layer: 4
+encoder_n_layer: 6
 decoder_n_layer: 6
-n_heads: 4
+n_heads: 8
 
 ##########################################################################################
 # Mamba Parameters
@@ -160,6 +161,6 @@ simulation:
   device: ${device}
   render: False
   n_cores: 2
-  num_episode: 20
+  num_episode: 50
   max_step_per_episode: 600
   use_multiprocessing: false

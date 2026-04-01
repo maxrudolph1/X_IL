@@ -50,6 +50,56 @@ class MultiTaskSim(BaseSim):
         self.success_rate = 0
         self.use_multiprocessing = use_multiprocessing
 
+    def _log_live_task_metrics(self, task_idx, success, episode_lengths, epoch, logged_tasks):
+        """Log per-task eval metrics once all rollouts for that task are complete."""
+        if epoch is None or logged_tasks is None:
+            return
+
+        task_idx = int(task_idx)
+        if task_idx in logged_tasks:
+            return
+
+        task_complete = bool(torch.all(episode_lengths[task_idx] != 0).item())
+        if not task_complete:
+            return
+
+        task_success = torch.mean(success[task_idx]).item()
+        task_average_length = torch.mean(episode_lengths[task_idx]).item()
+
+        completed_task_ids = sorted(logged_tasks | {task_idx})
+        live_average_success = torch.mean(torch.mean(success[completed_task_ids], dim=-1)).item()
+
+        custom_step = f"{epoch}_custom_step"
+        wandb.log({
+            custom_step: task_idx,
+            f"{epoch}_tasks_success": task_success,
+            f"epoch{epoch}_task_average_length": task_average_length,
+            f"epoch{epoch}_completed_tasks": len(completed_task_ids),
+            f"epoch{epoch}_live_average_success": live_average_success,
+        })
+        log.info(
+            "Live eval log for task %s: success=%s, avg_len=%s, completed_tasks=%s, live_avg_success=%s",
+            task_idx,
+            task_success,
+            task_average_length,
+            len(completed_task_ids),
+            live_average_success,
+        )
+        logged_tasks.add(task_idx)
+
+    def _log_newly_completed_tasks(self, success, episode_lengths, epoch, logged_tasks):
+        if epoch is None or logged_tasks is None:
+            return
+
+        for task_idx in range(success.shape[0]):
+            self._log_live_task_metrics(
+                task_idx=task_idx,
+                success=success,
+                episode_lengths=episode_lengths,
+                epoch=epoch,
+                logged_tasks=logged_tasks,
+            )
+
     def reverse_rgb_channels(self, test_img):
 
         test_img = test_img[::-1, ::-1, :]
@@ -68,7 +118,9 @@ class MultiTaskSim(BaseSim):
                    counter,
                    agent=None,
                    agent_config=None,
-                   model_states=None):
+                   model_states=None,
+                   epoch=None,
+                   logged_tasks=None):
         # Only set CPU affinity if using multiprocessing
         # if self.use_multiprocessing:
         #     print(os.getpid(), cpu_set)
@@ -178,6 +230,13 @@ class MultiTaskSim(BaseSim):
             log.info(f'completed_lengths {completed_lengths}')
             log.info(f'average success rate: {average_success}')
             log.info(f'average episode length: {average_episode_length}')
+            self._log_live_task_metrics(
+                task_idx=context,
+                success=success,
+                episode_lengths=episode_lengths,
+                epoch=epoch,
+                logged_tasks=logged_tasks,
+            )
 
             env.close()
 
@@ -207,11 +266,22 @@ class MultiTaskSim(BaseSim):
         episode_lengths = torch.zeros([num_tasks, self.num_episode]).share_memory_()
         all_runs = num_tasks * self.num_episode
 
+        custom_step = None
+        if epoch is not None:
+            custom_step = f"{epoch}_custom_step"
+            wandb.define_metric(custom_step)
+            wandb.define_metric(f"{epoch}_tasks_success", step_metric=custom_step)
+            wandb.define_metric(f"epoch{epoch}_task_average_length", step_metric=custom_step)
+            wandb.define_metric(f"epoch{epoch}_completed_tasks", step_metric=custom_step)
+            wandb.define_metric(f"epoch{epoch}_live_average_success", step_metric=custom_step)
+
         contexts = np.arange(num_tasks)
         contexts = np.repeat(contexts, self.num_episode)
 
         context_ind = np.arange(self.num_episode)
         context_ind = np.tile(context_ind, num_tasks)
+
+        logged_tasks = set()
 
         if not self.use_multiprocessing:
             # Single process execution
@@ -231,7 +301,9 @@ class MultiTaskSim(BaseSim):
                 pid=0,
                 cpu_set=set(cpu_set),
                 counter=counter,
-                agent=agent
+                agent=agent,
+                epoch=epoch,
+                logged_tasks=logged_tasks,
             )
             pbar.close()
         else:
@@ -278,6 +350,8 @@ class MultiTaskSim(BaseSim):
                                     "agent": None,
                                     "agent_config": agent_config,
                                     "model_states": shared_states,
+                                    "epoch": epoch,
+                                    "logged_tasks": None,
                                 },
                                 )
                 p.start()
@@ -289,8 +363,20 @@ class MultiTaskSim(BaseSim):
                 if counter.value > last_counter:
                     pbar.update(counter.value - last_counter)
                     last_counter = counter.value
+                self._log_newly_completed_tasks(
+                    success=success,
+                    episode_lengths=episode_lengths,
+                    epoch=epoch,
+                    logged_tasks=logged_tasks,
+                )
 
             [p.join() for p in processes_list]
+            self._log_newly_completed_tasks(
+                success=success,
+                episode_lengths=episode_lengths,
+                epoch=epoch,
+                logged_tasks=logged_tasks,
+            )
             pbar.close()
 
         success_rate = torch.mean(success, dim=-1)
@@ -298,16 +384,16 @@ class MultiTaskSim(BaseSim):
 
         print(f'success array {success.detach()}')
 
-        custom_step = f"{epoch}_custom_step"
-        wandb.define_metric(custom_step)
-        wandb.define_metric(f"{epoch}_tasks_success", step_metric=custom_step)
-
         for num in range(num_tasks):
             log.info(f"Task {num}: {success_rate[num].item()}")
 
-            wandb.log({custom_step: num,
-                       f"{epoch}_tasks_success": success_rate[num].item()
-                       })
+            if num in logged_tasks:
+                continue
+
+            wandb.log({
+                custom_step: num,
+                f"{epoch}_tasks_success": success_rate[num].item(),
+            })
 
         wandb.log({f"epoch{epoch}_average_success": average_success})
         log.info(f"Average success rate: {average_success}")

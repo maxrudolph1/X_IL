@@ -8,6 +8,17 @@ logs/*
 .idea/*
 .vscode/*
 
+# Local environment and tool artifacts
+.cache/
+.codex
+.python-version
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+wandb/
+
 *.egg-info
 slurm_jobs/output/
 

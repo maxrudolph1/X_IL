@@ -159,4 +159,3 @@ class BaseTrainer:
                         split='val'):
         """Run a given number of evaluation steps."""
         return None
-
