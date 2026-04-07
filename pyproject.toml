@@ -17,6 +17,7 @@ dependencies = [
     "bddl",
     "future",
     "matplotlib",
+    "mujoco==3.3.2",
     "cloudpickle",
     "gym",
     "numexpr",

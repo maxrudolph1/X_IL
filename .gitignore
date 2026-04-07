@@ -25,3 +25,5 @@ slurm_jobs/output/
 utils/figures/*
 uv.lock
 LIBERO/
+
+tmp/

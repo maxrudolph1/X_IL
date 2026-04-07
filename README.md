@@ -48,22 +48,37 @@ To begin, clone this repository locally
 git clone git@github.com:ALRhub/X_IL.git
 ```
 
-### Installing requirements
+### Recommended `uv` setup for LIBERO
+For the LIBERO results reported in Table 1, use the `uv` environment defined by this repository. In
+particular, keep `mujoco==3.3.2`. On our stack, newer MuJoCo versions changed LIBERO offscreen
+renders enough to create a train/eval image mismatch and noticeably worse success rates.
+
+```
+cd X_IL
+uv venv --python 3.10
+source .venv/bin/activate
+uv sync
+```
+
+### Installing requirements with `pip` instead
+If you do not want to use `uv`, make sure you still install `mujoco==3.3.2` for LIBERO.
+
 ```
 conda create -n xil python=3.10
 conda activate xil
 
-# adapt to your own cuda version if you need
+# adapt to your own CUDA version if you need
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 
 pip install -r requirements.txt
+pip install mujoco==3.3.2
 ```
 
 ### Installing LIBERO Setup
 ```
 git clone https://github.com/Lifelong-Robot-Learning/LIBERO.git
 cd LIBERO
-pip install -e .
+uv pip install -e . --no-deps
 ```
 
 ### Installing RoboCasa Setup
@@ -143,7 +158,7 @@ X_IL
 ### Quick test on LIBERO
 Train decoder-only transformer with `BC` on LIBERO-Object tasks using 20% data and 3 seeds
 ```
-bash scripts/bc/dec/transformer.sh
+bash script/bc/dec/transformer.sh
 ```
 Please adapt the wandb configs and dataset path in the config file.
 

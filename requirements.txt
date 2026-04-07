@@ -3,6 +3,7 @@ numpy
 wandb
 easydict
 transformers
+omegaconf
 opencv-python
 einops
 thop
@@ -10,6 +11,7 @@ robosuite==1.4.0
 bddl
 future
 matplotlib
+mujoco==3.3.2
 cloudpickle
 gym
 numexpr
@@ -19,4 +21,8 @@ torchdiffeq
 imageio[ffmpeg]
 open3d
 ftfy
+Pillow
+regex
+scipy
 termcolor
+tqdm
