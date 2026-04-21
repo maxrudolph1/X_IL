@@ -25,6 +25,8 @@ class LiberoDataset(TrajectoryDataset):
             window_size: int = 1,
             start_idx: int = 0,
             traj_per_task: int = 1,
+            use_returns: bool = False,
+            discount: float = 1.0,
     ):
         super().__init__(
             data_directory=data_directory,
@@ -41,6 +43,11 @@ class LiberoDataset(TrajectoryDataset):
         self.obs_dim = obs_dim
         self.state_dim = state_dim
         self.data_directory = data_directory
+        self.use_returns = use_returns
+        self.discount = discount
+
+        if self.discount < 0:
+            raise ValueError("discount must be non-negative")
 
         task_suite = os.path.basename(data_directory)
         task_emb_dir = sim_framework_path("task_embeddings")
@@ -51,6 +58,7 @@ class LiberoDataset(TrajectoryDataset):
         data_embs = []
         actions = []
         masks = []
+        returns = []
         agentview_rgb = []
         eye_in_hand_rgb = []
 
@@ -88,12 +96,16 @@ class LiberoDataset(TrajectoryDataset):
 
                 # states_data = demo['states'][:]
                 action_data = demo['actions'][:]
-                # rewards_data = demo['rewards'][:]
+                if self.use_returns:
+                    rewards_data = demo['rewards'][:].astype(np.float32)
+                    returns_data = self.compute_discounted_returns(rewards_data)
                 # dones_data = demo['dones'][:]
 
                 # zero_states[0, :demo_length, :] = states_data  # would be T0, ...,Tn-1, Tn, 0, 0
                 zero_actions[0, :demo_length, :] = action_data
-                # zero_rewards[0, :demo_length] = rewards_data
+                if self.use_returns:
+                    zero_returns = np.zeros((1, self.max_len_data), dtype=np.float32)
+                    zero_returns[0, :demo_length] = returns_data
                 # zero_dones[0, :demo_length] = dones_data
                 zero_mask[0, :demo_length] = 1
 
@@ -120,7 +132,8 @@ class LiberoDataset(TrajectoryDataset):
 
                 # states.append(zero_states)
                 actions.append(zero_actions)
-                # rewards.append(zero_rewards)
+                if self.use_returns:
+                    returns.append(zero_returns)
                 # dones.append(zero_dones)
                 masks.append(zero_mask)
 
@@ -135,6 +148,9 @@ class LiberoDataset(TrajectoryDataset):
 
         # self.states = torch.from_numpy(np.concatenate(states)).to(device).float()
         self.actions = torch.from_numpy(np.concatenate(actions)).to(device).float()  # shape: B, T, D
+        self.returns = None
+        if self.use_returns:
+            self.returns = torch.from_numpy(np.concatenate(returns)).to(device).float()
 
         self.agentview_rgb = agentview_rgb
         self.eye_in_hand_rgb = eye_in_hand_rgb
@@ -151,6 +167,16 @@ class LiberoDataset(TrajectoryDataset):
         self.num_data = len(self.agentview_rgb)
 
         self.slices = self.get_slices()
+
+    def compute_discounted_returns(self, rewards):
+        discounted_returns = np.zeros_like(rewards, dtype=np.float32)
+        running_return = 0.0
+
+        for t in reversed(range(len(rewards))):
+            running_return = rewards[t] + self.discount * running_return
+            discounted_returns[t] = running_return
+
+        return discounted_returns
 
     def get_slices(self):  #Extract sample slices that meet certain conditions
         slices = []
@@ -223,5 +249,9 @@ class LiberoDataset(TrajectoryDataset):
         obs["lang_emb"] = task_emb
 
         obs["robot_states"] = torch.from_numpy(robot_states).to(self.device).float()
+
+        if self.use_returns:
+            returns = self.returns[i, start:end]
+            return obs, act, mask, returns
 
         return obs, act, mask

@@ -40,21 +40,28 @@ class BaseTrainer:
             eval_every_n_epochs: int = 50,
             obs_seq_len: int = 1,
             decay_ema: float = 0.999,
-            if_use_ema: bool = False
+            if_use_ema: bool = False,
+            log_every_n_batches: int = 0,
+            persistent_workers: bool = True,
+            prefetch_factor: int = 2,
     ):
         """Initialize."""
 
         self.trainset = hydra.utils.instantiate(trainset)
         # self.valset = hydra.utils.instantiate(valset)
 
-        self.train_dataloader = DataLoader(
-            self.trainset,
-            batch_size=train_batch_size,
-            shuffle=True,
-            num_workers=num_workers,
-            pin_memory=True,
-            drop_last=True,
-        )
+        dataloader_kwargs = {
+            "batch_size": train_batch_size,
+            "shuffle": True,
+            "num_workers": num_workers,
+            "pin_memory": True,
+            "drop_last": True,
+        }
+        if num_workers > 0:
+            dataloader_kwargs["persistent_workers"] = persistent_workers
+            dataloader_kwargs["prefetch_factor"] = prefetch_factor
+
+        self.train_dataloader = DataLoader(self.trainset, **dataloader_kwargs)
 
         # self.test_dataloader = DataLoader(
         #     self.valset,
@@ -74,6 +81,7 @@ class BaseTrainer:
 
         self.decay_ema = decay_ema
         self.if_use_ema = if_use_ema
+        self.log_every_n_batches = log_every_n_batches
 
         if self.scaler_type == 'minmax':
             self.scaler = MinMaxScaler(self.trainset.get_all_actions(), scale_data, device)
@@ -101,7 +109,7 @@ class BaseTrainer:
 
             epoch_loss = torch.tensor(0.0).to(self.device)
 
-            for data in self.train_dataloader:
+            for batch_idx, data in enumerate(self.train_dataloader, start=1):
                 obs_dict, action, mask = data
 
                 # put data on cuda
@@ -120,7 +128,10 @@ class BaseTrainer:
 
                 batch_loss = self.train_one_step(agent, obs_dict, action)
 
-                epoch_loss += batch_loss
+                epoch_loss += batch_loss.detach()
+
+                if self.log_every_n_batches > 0 and batch_idx % self.log_every_n_batches == 0:
+                    wandb.log({"train_batch_loss": batch_loss.item()})
 
             epoch_loss = epoch_loss / len(self.train_dataloader)
 

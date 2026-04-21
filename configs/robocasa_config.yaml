@@ -12,6 +12,8 @@ wandb:
   project: fast_mail_robocasa
 
 group: bc_robocasa
+run_name: null
+run_group: null
 
 hydra:
   mode: MULTIRUN # needed for launcher to be used

@@ -1,0 +1,11 @@
+python run.py --config-name=libero_failure_config \
+            --multirun agents=awr_agent \
+            trainers=awr_trainer \
+            agent_name=awr_transformer_failure_inclusive \
+            group=awr_decoder_only_failure_inclusive \
+            agents/model=bc/bc_dec_transformer \
+            trainset.use_returns=True \
+            valset.use_returns=True \
+            trainset.discount=0.99 \
+            valset.discount=0.99 \
+            seed=0,1,2

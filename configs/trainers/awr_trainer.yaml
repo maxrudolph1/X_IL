@@ -1,4 +1,4 @@
-_target_: trainers.base_trainer.BaseTrainer
+_target_: trainers.awr_trainer.AWRTrainer
 _recursive_: false
 
 obs_seq_len: ${obs_seq_len}
@@ -17,6 +17,3 @@ eval_every_n_epochs: ${eval_every_n_epochs}
 
 decay_ema: 0.995
 if_use_ema: ${if_use_ema}
-log_every_n_batches: 0
-persistent_workers: true
-prefetch_factor: 2

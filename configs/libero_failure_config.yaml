@@ -1,21 +1,21 @@
 defaults:
   - agents: bc_agent
   - trainers: base_trainer
+  - _self_
 
-agent_name: beso
-log_dir: logs/${task_suite}/
+agent_name: bc_transformer_failure_inclusive
+log_dir: logs/${rollout_suite}/
 
-# insert wandb here
 wandb:
-  entity: jiahuikchen 
-  project: xil_vla
+  entity: jiahuikchen
+  project: libero_failure_data
 
-group: bc_${task_suite}
+group: bc_${rollout_suite}_failure_inclusive
 run_name: null
 run_group: null
 
 hydra:
-  mode: MULTIRUN  # needed for launcher to be used
+  mode: MULTIRUN
   run:
     dir: ${log_dir}/runs/${agent_name}/${now:%Y-%m-%d}/${now:%H-%M-%S}
   job:
@@ -26,19 +26,23 @@ hydra:
 
 seed: 42
 
-# dataset config
-task_suite: libero_object
-traj_per_task: 10
+# The rollout files live under libero_spatial_1k, but task embeddings and
+# evaluation should still use the standard LIBERO spatial task suite.
+task_suite: libero_spatial
+rollout_suite: libero_spatial_1k
+traj_per_task: 1000
+val_start_idx: 900
+val_traj_per_task: 100
 
-## change the path of dataset
-libero_data_root: ${oc.env:LIBERO_DATA_ROOT,/datastor1/droid/.libero/datasets}
-dataset_path: ${libero_data_root}/${task_suite}
+libero_failure_data_root: ${oc.env:LIBERO_FAILURE_DATA_ROOT,/datastor2/mrudolph/libero_data}
+dataset_path: ${libero_failure_data_root}/rollouts/${rollout_suite}
 
-# Model Setting
-window_size: 10
+# The failure-inclusive rollouts store chunked actions with shape (T, 8, 7).
+action_horizon: 8
+window_size: 1
 obs_seq_len: 1
-act_seq_len: ${window_size}
-multistep: ${window_size} # only for inference, could be different from act_seq_len
+act_seq_len: ${action_horizon}
+multistep: ${act_seq_len}
 goal_window_size: 1
 goal_conditioned: True
 
@@ -46,40 +50,39 @@ use_pos_emb: True
 num_sampling_steps: 4
 if_use_ema: True
 
-# obs_tokens: obs_seq_len * len(obs_modalities)
+# 2 cameras * obs_seq_len=1.
 obs_tokens: 2
 
-# Training
 train_batch_size: 256
 val_batch_size: 32
 num_workers: 4
-device: 'cuda'
+log_every_n_batches: 0
+persistent_workers: true
+prefetch_factor: 2
+device: cuda
 epoch: 100
 eval_every_n_epochs: 1
 scale_data: True
-scaler_type: 'minmax'
+scaler_type: minmax
 
-## Environment
 obs_dim: 9
 action_dim: 7
-state_dim: 110
-max_len_data: 260
+state_dim: 9
+max_len_data: 63
 
-## Observations
 if_robot_states: False
 
 camera_names:
-  - "agentview"
-  - "eye_in_hand"
+  - agentview
+  - eye_in_hand
 
 shape_meta:
-  # acceptable types: rgb, low_dim
   obs:
     agentview_image:
-      shape: [ 3, 128, 128 ]
+      shape: [3, 128, 128]
       type: rgb
     eye_in_hand_image:
-      shape: [ 3, 128, 128 ]
+      shape: [3, 128, 128]
       type: rgb
 
 ##########################################################################################
@@ -121,38 +124,57 @@ mamba_decoder_cfg:
 ##########################################################################################
 xlstm_encoder_blocks: 4
 xlstm_encoder_vocab_size: 14
-xlstm_encoder_chunkwise_kernel: "parallel--native_autograd"
-xlstm_encoder_mode: "train"
+xlstm_encoder_chunkwise_kernel: parallel--native_autograd
+xlstm_encoder_mode: train
 xlstm_encoder_adaLN_zero: False
 xlstm_encoder_in_context_cond: False
 
 xlstm_decoder_blocks: 8
 xlstm_decoder_vocab_size: 10
-xlstm_decoder_chunkwise_kernel: "parallel--native_autograd"
-xlstm_decoder_mode: "train"
+xlstm_decoder_chunkwise_kernel: parallel--native_autograd
+xlstm_decoder_mode: train
 xlstm_decoder_adaLN_zero: True
 xlstm_decoder_in_context_cond: False
 
-# Dataset
 trainset:
-  _target_: environments.dataset.libero_dataset.LiberoDataset
+  _target_: environments.dataset.libero_failure_rollout_dataset.LiberoFailureRolloutDataset
   data_directory: ${dataset_path}
+  task_embedding_suite: ${task_suite}
   obs_dim: ${obs_dim}
   action_dim: ${action_dim}
-  state_dim: ${state_dim}
   max_len_data: ${max_len_data}
   window_size: ${window_size}
+  start_idx: 0
   traj_per_task: ${traj_per_task}
+  include_successful: True
+  include_failed: True
+  action_mode: chunk
+  action_horizon: ${action_horizon}
+  obs_frame_index: -1
+  use_returns: False
+  discount: 0.99
+  cache_mode: all
+  cache_images_max_gb: 48
 
 valset:
-  _target_: environments.dataset.libero_dataset.LiberoDataset
+  _target_: environments.dataset.libero_failure_rollout_dataset.LiberoFailureRolloutDataset
   data_directory: ${dataset_path}
+  task_embedding_suite: ${task_suite}
   obs_dim: ${obs_dim}
   action_dim: ${action_dim}
-  state_dim: ${state_dim}
   max_len_data: ${max_len_data}
   window_size: ${window_size}
-  start_idx: 30
+  start_idx: ${val_start_idx}
+  traj_per_task: ${val_traj_per_task}
+  include_successful: True
+  include_failed: True
+  action_mode: chunk
+  action_horizon: ${action_horizon}
+  obs_frame_index: -1
+  use_returns: False
+  discount: 0.99
+  cache_mode: all
+  cache_images_max_gb: 8
 
 simulation:
   _target_: simulation.libero_sim.MultiTaskSim
@@ -166,3 +188,8 @@ simulation:
   num_episode: 50
   max_step_per_episode: 600
   use_multiprocessing: false
+
+trainers:
+  log_every_n_batches: ${log_every_n_batches}
+  persistent_workers: ${persistent_workers}
+  prefetch_factor: ${prefetch_factor}
