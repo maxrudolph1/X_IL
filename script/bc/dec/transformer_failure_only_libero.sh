@@ -1,0 +1,11 @@
+python run.py --config-name=libero_failure_config \
+            --multirun agents=bc_agent \
+            agent_name=bc_transformer_failure_only \
+            group=bc_decoder_only_failure_only \
+            run_group=bc_decoder_only_failure_only \
+            agents/model=bc/bc_dec_transformer \
+            trainset.include_successful=False \
+            trainset.include_failed=True \
+            valset.include_successful=False \
+            valset.include_failed=True \
+            seed=0,1,2
